@@ -231,7 +231,7 @@ class Graph(object):
     def normAngle(a):
         return np.array([((i+np.pi) - float(int((i+np.pi)/(2*np.pi)))*2*np.pi)-np.pi for i in a])
 
-    def recoverRotation(self, src, dst):
+    def errorRotation(self, src, dst):
         ps = src.points(dst)
         ps = np.array([ i for i in ps])
         pd = dst.points(src)
@@ -245,9 +245,9 @@ class Graph(object):
         r1 = (self.decomposeRotation(inv(self.rotation(src.r)).dot(decomposition[0].dot(self.rotation(dst.r))))+np.pi/2) % np.pi - np.pi/2
         r2 = (self.decomposeRotation(inv(self.rotation(src.r)).dot(decomposition[1].dot(self.rotation(dst.r))))+np.pi/2) % np.pi - np.pi/2
         if r1.dot(np.transpose(r1)) < r2.dot(np.transpose(r2)):
-            return r1,E[1]
+            return r1,r2,E[1]
         else:
-            return r2,E[1]
+            return r1,r2,E[1]
 
     #tested
     def deleteWeekEdges(self):
@@ -284,51 +284,47 @@ class Graph(object):
 
     def optimiseRotation(self):
         V = dict([ (v,[]) for v in self.V])
-        rot = dict([(v,v.r.copy()) for v in self.V])
+        rot = dict([(v,np.array([0.0,0.0,0.0])) for v in self.V])
         c = 0.01
         for e in self.E:
-            r = self.recoverRotation(e[0],e[1])
+            r = self.errorRotation(e[0],e[1])
             if not (r is None):
                 V[e[0]].append((e[1],r[0],r[1].sum()))
                 V[e[1]].append((e[0],-r[0],r[1].sum()))
-        for v in V:
-            t = [ math.sqrt(np.transpose(i[1]).dot(i[1])[0,0]) for i in v[1]]
+        Vt = []
+        for v in V.items():
+            t = [ math.sqrt(np.dot(i[1],i[1])) for i in v[1]]
             sorted(t)
-            m = t[len(t)/2]*4
+            m = t[len(t)/2]*10
             edges = []
             for i in v[1]:
-                if np.transpose(i[1]).dot(i[1])[0,0] < m*m:
+                if np.dot(i[1],i[1]) < m*m:
                     edges.append(i)
-            e[1] = edges
+            Vt.append((v[0],edges))
+        V = dict(Vt)
 
-        mean_offset = []
         mean_mist = []
         for i in range(100):
             #for debug
-            offsets = []
             mist = []
 
             #r^i_(n+1)  = (1-c) * sum( (r^j_n+r_(i,j))*w_(i,j) )/sum(w_(i,j)) - c*r_i^0
             shuffeled = range(len(self.V))
-            shuffeled = np.random.shuffle(shuffeled)
+            np.random.shuffle(shuffeled)
             for id in shuffeled:
-                e = V[self.V[id]]
+                v = self.V[id]
+                e = V[v]
                 sum = 0
                 s = 0
                 for i in e:
                     sum += (rot[i[0]]+i[1])*i[2]
                     s+=i[2]
                 sum /= s
-                r = (1-c)*sum-c*(self.V[id].r)
-                offsets.append(math.sqrt(np.dot(rot[self.V[id]]-r,rot[self.V[id]]-r)))
-                mist.append(math.sqrt(np.dot(self.V[id].trueR - rot[self.V[id]]-r,self.V[id].trueR - rot[self.V[id]]-r)))
-
-                mean_offset.append(np.array(offsets).mean())
-                mean_mist.append(np.array(mist).mean())
+                rot[v] = sum
+                mist.append(math.sqrt(np.dot(v.trueR + rot[v]-v.r, v.trueR + rot[v]-v.r)))
+            mean_mist.append(np.array(mist).mean())
 
         plt.plot(mean_mist)
-        plt.show()
-        plt.plot(mean_offset)
         plt.show()
 
 
@@ -349,10 +345,13 @@ g.drawV()
 g.drawE()
 g.drawPoints()
 g.drawTruePoints()
-for e in g.E:
-    r = g.recoverRotation(e[0],e[1])[0]
-    if( np.transpose(r).dot(r) > 0.001):
-        print r
+#g.addNoiseToPositions(0,0,0.0,0.0)
+for i in g.E:
+    e = g.errorRotation(i[0],i[1])
+    print e[0]-(i[0].trueR-i[1].trueR)
+    print e[1]-(i[0].trueR-i[1].trueR)
+    print "***"
+#g.optimiseRotation()
 
 while 1:
     cv2.imshow("graph",g.img)
